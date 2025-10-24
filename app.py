@@ -2,10 +2,11 @@
 # Import necessary libraries
 import streamlit as st
 import re
+import pandas as pd
 from graphviz import Digraph
 
 # ===================================================================
-#  1. FINITE AUTOMATA INTERPRETER CLASSES (No changes needed)
+#  1. FINITE AUTOMATA INTERPRETER CLASSES
 # ===================================================================
 
 class Lexer:
@@ -84,8 +85,9 @@ class Parser:
                 for to_state in to_states:
                     if to_state not in self.fa['states']: raise ValueError(f"Semantic Error: Transition state '{to_state}' is not declared.")
 
+# --- MODIFIED Simulator to provide a trace for both DFA and NFA ---
 class Simulator:
-    """Runs a simulation and provides a path trace for DFAs."""
+    """Runs a simulation and provides a path trace for DFAs and NFAs."""
     def __init__(self, fa):
         self.fa = fa; self.start_state = self.fa.get('start_state'); self.final_states = self.fa.get('final', set()); self.transitions = self.fa.get('transitions', {})
     def is_dfa(self):
@@ -94,16 +96,18 @@ class Simulator:
             for symbol_transitions in state_transitions.values():
                 if len(symbol_transitions) > 1: return False
         return True
-    def run_nfa(self, input_string):
-        active_states = self._epsilon_closure({self.start_state})
+    def run_nfa_with_trace(self, input_string):
+        trace = []; active_states = self._epsilon_closure({self.start_state})
+        trace.append(('-', active_states.copy())) # Record initial set of states
         for symbol in input_string:
-            if symbol not in self.fa['alphabet']: return f"Rejected (Runtime Error: Input symbol '{symbol}' not in alphabet)", None, None
+            if symbol not in self.fa['alphabet']: return f"Rejected (Runtime Error: Input symbol '{symbol}' not in alphabet)", trace, None
             next_active_states = set()
             for state in active_states: next_active_states.update(self.transitions.get(state, {}).get(symbol, set()))
             active_states = self._epsilon_closure(next_active_states)
+            trace.append((symbol, active_states.copy())) # Record set of states after reading symbol
             if not active_states: break
         result = "Accepted" if not active_states.isdisjoint(self.final_states) else "Rejected"
-        return result, None, None
+        return result, trace, None # Path is None for NFA
     def run_dfa_with_trace(self, input_string):
         trace = []; path = []; current_state = self.start_state
         if not current_state: return "Rejected (Runtime Error: No start state defined)", None, None
@@ -130,29 +134,22 @@ class Visualizer:
     """Creates a visual representation for both DFAs and NFAs using Graphviz."""
     def __init__(self, fa):
         self.fa = fa
-    def _add_nodes(self, dot, highlight_nodes=None):
-        if highlight_nodes is None: highlight_nodes = {}
+    def render(self):
+        dot = Digraph(comment='Finite Automaton'); dot.attr(rankdir='LR')
         for state in self.fa.get('states', set()):
-            color = highlight_nodes.get(state, 'white')
             shape = 'doublecircle' if state in self.fa.get('final', set()) else 'circle'
-            dot.node(state, state, shape=shape, style='filled', fillcolor=color)
+            dot.node(state, state, shape=shape)
         start_state = self.fa.get('start_state')
         if start_state: dot.node('', '', shape='none', width='0', height='0'); dot.edge('', start_state, label='')
-    def _add_edges(self, dot, highlight_edges=None):
-        if highlight_edges is None: highlight_edges = []
         transitions = self.fa.get('transitions', {})
         for from_state, trans_map in transitions.items():
             for symbol, to_states in trans_map.items():
                 for to_state in to_states:
-                    is_highlight = (from_state, symbol, to_state) in highlight_edges
-                    dot.edge(from_state, to_state, label=symbol, color='red' if is_highlight else 'black', penwidth='2.5' if is_highlight else '1.0')
-    def render(self, highlight_nodes=None, highlight_edges=None):
-        dot = Digraph(comment='Finite Automaton'); dot.attr(rankdir='LR')
-        self._add_nodes(dot, highlight_nodes); self._add_edges(dot, highlight_edges)
+                    dot.edge(from_state, to_state, label=symbol)
         return dot
 
 # ===================================================================
-#  2. STREAMLIT USER INTERFACE (CORRECTED)
+#  2. STREAMLIT USER INTERFACE (Text-Based Path for DFA & NFA)
 # ===================================================================
 
 st.set_page_config(layout="wide")
@@ -169,9 +166,9 @@ with st.form("fa_form"):
         states_in = st.text_input("States (Q)", "q0,q1,q2,q3", help="A comma-separated list of state names.")
         alphabet_in = st.text_input("Alphabet (Σ)", "0,1", help="A comma-separated list of symbols.")
         start_state_in = st.text_input("Start State (q₀)", "q0", help="A single state name.")
-        final_states_in = st.text_input("Final States (F)", "q2", help="A comma-separated list of final state names.") # Example changed
+        final_states_in = st.text_input("Final States (F)", "q3", help="A comma-separated list of final state names.")
     with col2:
-        transitions_in = st.text_area("Transitions (δ)", "(q0,0)->q0\n(q0,1)->q1\n(q1,0)->q2\n(q1,1)->q0", height=205, help="One transition rule per line.") # Example changed
+        transitions_in = st.text_area("Transitions (δ)", "(q0,0)->q0\n(q0,1)->q1\n(q1,0)->q2\n(q1,1)->q0\n(q2,0)->q3\n(q2,1)->q2", height=205, help="One transition rule per line.")
     submitted_definition = st.form_submit_button("📊 Generate State Diagram")
 
 if submitted_definition:
@@ -192,7 +189,7 @@ if st.session_state.diagram_generated:
     
     with st.form("simulation_form"):
         st.subheader("2. Test a Sequence")
-        input_string = st.text_input("Enter the sequence to test:", "101") # Example changed
+        input_string = st.text_input("Enter the sequence to test:", "100")
         submitted_simulation = st.form_submit_button("▶️ Run Simulation")
 
     if submitted_simulation:
@@ -200,37 +197,38 @@ if st.session_state.diagram_generated:
         fa_definition = st.session_state.fa_definition
         simulator = Simulator(fa_definition)
         
-        if simulator.is_dfa():
+        is_dfa = simulator.is_dfa()
+        if is_dfa:
             result, trace, path = simulator.run_dfa_with_trace(input_string)
+        else:
+            result, trace, _ = simulator.run_nfa_with_trace(input_string) # NFA trace is different
+        
+        if "Accepted" in result: st.success(f"✔️ **Result:** The sequence '{input_string}' is **Accepted**.")
+        else: st.error(f"❌ **Result:** The sequence '{input_string}' is **Rejected**."); st.caption(result)
+        
+        if trace:
+            st.markdown("##### Execution Trace")
             
-            if "Accepted" in result: st.success(f"✔️ **Result:** The sequence '{input_string}' is **Accepted**.")
-            else: st.error(f"❌ **Result:** The sequence '{input_string}' is **Rejected**."); st.caption(result)
-            
-            st.markdown("##### Execution Path")
-            st.caption("The red path shows the sequence's journey through the DFA.")
-            
-            final_state = path[-1] if path else simulator.start_state
-            is_accepted = final_state in simulator.final_states
-            
-            # --- THIS IS THE FINAL, CORRECTED LOGIC ---
-            # 1. First, create a dictionary to color all states in the path light blue.
-            highlight_nodes = {state: "lightblue" for state in path}
-
-            # 2. Then, overwrite the final state's color to green or pink.
-            # This ensures the final state has the correct result color.
-            highlight_nodes[final_state] = "lightgreen" if is_accepted else "pink"
-            
-            # 3. Create the visualizer and render the graph ONCE with all rules.
-            v = Visualizer(fa_definition)
-            graph = v.render(
-                highlight_nodes=highlight_nodes,
-                highlight_edges=trace
-            )
-            st.graphviz_chart(graph)
-            # --- END OF CORRECTION ---
-
-        else: # NFA
-            result, _, _ = simulator.run_nfa(input_string)
-            if "Accepted" in result: st.success(f"✔️ **Result:** The sequence '{input_string}' is **Accepted**.")
-            else: st.error(f"❌ **Result:** The sequence '{input_string}' is **Rejected**."); st.caption(result)
-            st.info("Execution path highlighting is only available for DFAs.")
+            if is_dfa:
+                # Format DFA trace
+                path_data = [{"Step": i + 1, "From State": f, "Input": s, "To State": t} for i, (f, s, t) in enumerate(trace)]
+                if path_data:
+                    df = pd.DataFrame(path_data)
+                    st.table(df.set_index('Step'))
+                final_state = path[-1] if path else simulator.start_state
+                st.write(f"**End of sequence.** The machine finished in state **`{final_state}`**.")
+            else:
+                # Format NFA trace
+                st.caption("Showing the set of all possible active states after each input symbol.")
+                path_data = []
+                # First row is initial state
+                initial_states_str = ', '.join(sorted(list(trace[0][1])))
+                path_data.append({"Step": "Start", "Input Symbol": "ε (initial)", "Active States": f"{{{initial_states_str}}}"})
+                # Subsequent rows
+                for i, (symbol, states) in enumerate(trace[1:]):
+                    states_str = ', '.join(sorted(list(states))) if states else '{}'
+                    path_data.append({"Step": i + 1, "Input Symbol": f"'{symbol}'", "Active States": f"{{{states_str}}}"})
+                df = pd.DataFrame(path_data)
+                st.table(df.set_index('Step'))
+                final_states_reached = trace[-1][1]
+                st.write(f"**End of sequence.** The machine finished in the set of states **`{final_states_reached}`**.")
