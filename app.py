@@ -5,7 +5,7 @@ import re
 import pandas as pd
 from graphviz import Digraph
 
-#FINITE AUTOMATA INTERPRETER CLASSES
+#  FINITE AUTOMATA INTERPRETER CLASSES
 class Lexer:
     """Breaks the source code into a stream of tokens."""
     def __init__(self, source_code):
@@ -82,6 +82,7 @@ class Parser:
                 for to_state in to_states:
                     if to_state not in self.fa['states']: raise ValueError(f"Semantic Error: Transition state '{to_state}' is not declared.")
 
+#Simulator Class
 class Simulator:
     """Runs a simulation and provides a path trace for DFAs and NFAs."""
     def __init__(self, fa):
@@ -94,7 +95,7 @@ class Simulator:
         return True
     def run_nfa_with_trace(self, input_string):
         trace = []; active_states = self._epsilon_closure({self.start_state})
-        trace.append(('-', active_states.copy()))
+        if self.start_state: trace.append(('-', active_states.copy()))
         for symbol in input_string:
             if symbol not in self.fa['alphabet']: return f"Rejected (Runtime Error: Input symbol '{symbol}' not in alphabet)", trace, None
             next_active_states = set()
@@ -112,7 +113,11 @@ class Simulator:
             if symbol not in self.fa['alphabet']: return f"Rejected (Runtime Error: Input symbol '{symbol}' not in alphabet)", trace, path
             next_state_set = self.transitions.get(current_state, {}).get(symbol, set())
             if not next_state_set: return "Rejected (Runtime Error: No transition defined)", trace, path
-            next_state = next_state_set.pop()
+            
+            # --- THIS IS THE FIX FOR THE SELF-LOOP BUG ---
+            # Get the element from the set WITHOUT removing it.
+            next_state = next(iter(next_state_set))
+            
             trace.append((current_state, symbol, next_state))
             path.append(next_state); current_state = next_state
         result = "Accepted" if current_state in self.final_states else "Rejected"
@@ -145,7 +150,6 @@ class Visualizer:
         return dot
 
 #STREAMLIT USER INTERFACE
-
 st.set_page_config(
     layout="wide", 
     page_title="FA Interpreter", 
@@ -157,47 +161,46 @@ st.title("Finite Automaton Interpreter")
 if 'fa_definition' not in st.session_state: st.session_state.fa_definition = None
 if 'show_simulation' not in st.session_state: st.session_state.show_simulation = False
 
-#Sidebar (Left Column)
+# --- Sidebar (Left Column) ---
 with st.sidebar:
     st.header("1. Define Automaton")
     states_in = st.text_input("States (Q)", "q0,q1,q2,q3", help="Comma-separated state names.")
     alphabet_in = st.text_input("Alphabet (Σ)", "0,1", help="Comma-separated symbols.")
     start_state_in = st.text_input("Start State (q₀)", "q0", help="Single state name.")
     final_states_in = st.text_input("Final States (F)", "q3", help="Comma-separated final state names.")
-    transitions_in = st.text_area("Transitions (δ)", "(q0,0)->q0\n(q0,1)->q1\n(q1,0)->q2\n(q1,1)->q0\n(q2,0)->q3\n(q2,1)->q2", height=150, help="One rule per line.")
+    transitions_in = st.text_area("Transitions (δ)", "(q0,0)->q0\n(q0,1)->q1\n(q1,0)->q2\n(q1,1)->q0\n(q2,0)->q2\n(q2,1)->q3", height=150, help="One rule per line.")
     
-    generate_diagram_button = st.button("Generate Diagram")
+    generate_diagram_button = st.button("Generate State Diagram")
 
-    st.markdown("---") #Separator
+    st.markdown("---") # Separator
 
     st.header("2. Test Sequence")
-    input_string = st.text_input("Enter sequence:", "100")
+    input_string = st.text_input("Enter sequence:", "10001")
     run_simulation_button = st.button("Run Simulation", disabled=(st.session_state.fa_definition is None))
 
-#Main Area
+# --- Main Area ---
 col_diagram, col_results = st.columns(2)
 
-#Middle Column: Diagram Display
+# --- Middle Column: Diagram Display ---
 with col_diagram:
     st.subheader("Automaton Structure")
     if generate_diagram_button:
         if not all([states_in, alphabet_in, start_state_in, final_states_in, transitions_in]):
             st.warning("Please fill in all automaton definition fields.")
-            st.session_state.fa_definition = None # Reset state if inputs are incomplete
+            st.session_state.fa_definition = None
         else:
             fa_code = f"states:{states_in}\nalphabet:{alphabet_in}\nstart:{start_state_in}\nfinal:{final_states_in}\ntransitions:\n{transitions_in}\nend"
             try:
                 lexer = Lexer(fa_code); tokens = lexer.tokenize()
                 parser = Parser(tokens); fa_definition = parser.parse()
-                st.session_state.fa_definition = fa_definition # Store the valid definition
-                st.session_state.show_simulation = False # Reset simulation display
+                st.session_state.fa_definition = fa_definition
+                st.session_state.show_simulation = False
                 st.success("Definition parsed successfully. Diagram generated.")
             except (SyntaxError, ValueError) as e:
                 st.error(f"**Error in Definition:**\n\n{e}"); st.session_state.fa_definition = None
             except Exception as e:
                 st.error(f"An unexpected error occurred: {e}"); st.session_state.fa_definition = None
 
-    # Display the diagram if it has been successfully generated
     if st.session_state.fa_definition:
         visualizer = Visualizer(st.session_state.fa_definition)
         static_graph = visualizer.render()
@@ -205,11 +208,11 @@ with col_diagram:
     else:
         st.info("Define the automaton in the sidebar and click 'Generate Diagram'.")
 
-#Right Column: Simulation Results
+# --- Right Column: Simulation Results ---
 with col_results:
     st.subheader("Simulation Results")
     if run_simulation_button and st.session_state.fa_definition:
-        st.session_state.show_simulation = True # Trigger display
+        st.session_state.show_simulation = True
 
     if st.session_state.show_simulation:
         fa_definition = st.session_state.fa_definition
@@ -221,14 +224,12 @@ with col_results:
         else:
             result, trace, _ = simulator.run_nfa_with_trace(input_string)
 
-        #Display final result message
         if "Accepted" in result:
             st.success(f"**Result:** Sequence '{input_string}' is **Accepted**.")
         else:
             st.error(f"**Result:** Sequence '{input_string}' is **Rejected**.")
             if "Runtime Error" in result: st.caption(result)
 
-        #Display Execution Trace
         if trace:
             st.markdown("##### Execution Trace")
             if is_dfa:
@@ -237,7 +238,7 @@ with col_results:
                     df = pd.DataFrame(path_data); st.table(df.set_index('Step'))
                 final_state = path[-1] if path else simulator.start_state
                 st.write(f"**End:** Finished in state **`{final_state}`**.")
-            else: #NFA Trace
+            else: # NFA Trace
                 st.caption("Showing the set of active states after each input symbol.")
                 path_data = []
                 initial_states_str = ', '.join(sorted(list(trace[0][1])))
