@@ -147,7 +147,7 @@ class Visualizer:
             for symbol, to_states in trans_map.items():
                 display_symbol = "ε" if symbol == "eps" else symbol
                 for to_state in to_states:
-                    dot.edge(from_state, to_state, label=symbol)
+                    dot.edge(from_state, to_state, label=display_symbol)
         return dot
 
 #STREAMLIT USER INTERFACE
