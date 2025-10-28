@@ -166,10 +166,10 @@ if 'show_simulation' not in st.session_state: st.session_state.show_simulation =
 with st.sidebar:
     st.header("1. Define Automaton")
     states_in = st.text_input("States (Q)", "q0,q1,q2,q3", help="Comma-separated state names.")
-    alphabet_in = st.text_input("Alphabet (Σ)", "0,1", help="Comma-separated symbols.")
+    alphabet_in = st.text_input("Alphabet (Σ)", "0,1", help="Comma-separated symbols. Type 'eps' for ε.")
     start_state_in = st.text_input("Start State (q₀)", "q0", help="Single state name.")
     final_states_in = st.text_input("Final States (F)", "q3", help="Comma-separated final state names.")
-    transitions_in = st.text_area("Transitions (δ)", "(q0,0)->q0\n(q0,1)->q1\n(q1,0)->q2\n(q1,1)->q0\n(q2,0)->q2\n(q2,1)->q3", height=150, help="One rule per line.")
+    transitions_in = st.text_area("Transitions (δ)", "(q0,0)->q0\n(q0,1)->q1\n(q1,0)->q2\n(q1,1)->q0\n(q2,0)->q2\n(q2,1)->q3", height=150, help="One rule per line. Type 'eps' for ε.")
     
     generate_diagram_button = st.button("Generate State Diagram")
 
