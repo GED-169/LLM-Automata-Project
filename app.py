@@ -145,6 +145,7 @@ class Visualizer:
         transitions = self.fa.get('transitions', {})
         for from_state, trans_map in transitions.items():
             for symbol, to_states in trans_map.items():
+                display_symbol = "ε" if symbol == "eps" else symbol
                 for to_state in to_states:
                     dot.edge(from_state, to_state, label=symbol)
         return dot
